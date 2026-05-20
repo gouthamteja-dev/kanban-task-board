@@ -156,7 +156,7 @@ function CardForm({ columnId, editCard, onClose }: CardFormProps) {
             label="Due date"
             value={form.dueDate ? dayjs(form.dueDate) : null}
             onChange={(val: Dayjs | null) =>
-              setForm((f) => ({ ...f, dueDate: val ? val.toISOString() : null }))
+              setForm((f) => ({ ...f, dueDate: val?.isValid() ? val.toISOString() : null }))
             }
             slotProps={{
               textField: { size: 'small', fullWidth: true, sx: { '& .MuiOutlinedInput-root': { borderRadius: 2 } } },

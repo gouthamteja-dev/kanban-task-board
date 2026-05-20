@@ -438,13 +438,13 @@ export const selectFilteredCardIds = (columnId: string) => (s: BoardState): stri
   const col = board.columns[columnId];
   if (!col) return [];
   const { search, priorities, tagIds } = s.filters;
+  const query = search.trim().toLowerCase();
 
   return col.cardIds.filter((id) => {
     const card = board.cards[id];
     if (!card) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!card.title.toLowerCase().includes(q) && !card.description.toLowerCase().includes(q)) {
+    if (query) {
+      if (!card.title.toLowerCase().includes(query) && !card.description.toLowerCase().includes(query)) {
         return false;
       }
     }
