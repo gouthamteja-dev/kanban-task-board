@@ -1,6 +1,6 @@
 # Kanban Task Board
 
-A Trello-style Kanban board built with React 19, TypeScript, MUI, Zustand, and @dnd-kit. Organize tasks across columns with drag-and-drop, filtering, persistence, dark mode, and undo/redo.
+A Trello-style Kanban board built with React 19, TypeScript, MUI, Apollo Client, Apollo Server, Prisma, PostgreSQL, and @dnd-kit. Organize tasks across columns with drag-and-drop, filtering, lazy-loaded cards, persistent ordering, dark mode, and optimistic updates.
 
 🚀 **[Live Deployment Link](https://kanban-task-board-cyan-omega.vercel.app/)**  
 📹 **[Video Walkthrough / Demo](https://mail.google.com/mail/u/0/?hl=en#inbox/FMfcgzQgLrzgHKJCNDcLHdbHrwDbjdvd?projector=1)** 
@@ -12,14 +12,16 @@ A Trello-style Kanban board built with React 19, TypeScript, MUI, Zustand, and @
 - **Board columns** — Default "To Do", "In Progress", "Done"; add, rename, delete columns
 - **Task cards** — Title, description, priority (Low/Medium/High), due date, tags
 - **Card detail modal** — Create and edit cards in a full modal
-- **Drag and drop** — Move cards between columns and reorder within a column (@dnd-kit)
-- **Persistence** — Board state saved to `localStorage` via Zustand `persist`
+- **Drag and drop** — Move cards between columns and reorder within a column with optimistic Apollo updates
+- **Persistence** — Board state saved in PostgreSQL through Apollo GraphQL
+- **Lazy loading** — Board query loads columns first; cards load per column with cursor pagination
 - **Search & filter** — Filter by title/description, priority, and tags
 
 ### Stretch
 - **Dark mode** — Toggle with persistence
-- **Undo / Redo** — Last 10 board-changing actions via a manual snapshot stack in `src/store/history.ts`; `Ctrl+Z` / `Ctrl+Y`
-- **Keyboard shortcuts** — `N` new card, `/` focus search, `Ctrl+Z`/`Ctrl+Y` undo/redo
+- **GraphQL patterns** — `Node` interface, `SearchResult` union, `DateTime` scalar, `@uppercase` directive, and `Card.isOverdue`
+- **Seed data** — 500+ cards for testing pagination performance
+- **Keyboard shortcuts** — `N` new card and `/` focus search
 
 ## Tech Stack
 
@@ -28,25 +30,30 @@ A Trello-style Kanban board built with React 19, TypeScript, MUI, Zustand, and @
 | Build | Vite 8 | Fast HMR, modern ESM bundling |
 | UI | React 19 + TypeScript 6 | Current stable stack |
 | Components | MUI 9 | Accessible, themeable, DatePicker support |
-| State | Zustand + persist + manual history stack | Selector subscriptions, localStorage, undo/redo without extra middleware |
+| State | Apollo Client + small Zustand UI store | Apollo cache is the server-backed source of truth; Zustand only stores local UI preferences |
+| API | Apollo Server GraphQL | Schema-first API matching production stack expectations |
+| Database | PostgreSQL + Prisma | Relational persistence, migrations, seed script, ordering indexes |
 | DnD | @dnd-kit | React 19 compatible, maintained, accessible |
 | IDs | nanoid | Lightweight unique IDs |
 | Dates | dayjs | Small bundle, MUI DatePicker adapter |
 
 ## Trade-offs
 
-- **Zustand over Redux** — Less boilerplate; no server cache needed for this scope.
+- **Apollo Client over localStorage board state** — Required for Part 2; gives normalized cache, fetchMore pagination, and optimistic updates.
+- **Zustand retained only for UI state** — Dark mode and filters do not need a database write on every keystroke.
+- **Prisma over raw SQL** — Migrations and generated types make database setup reproducible.
 - **@dnd-kit over react-beautiful-dnd** — Active maintenance and React 19 support; r-b-dnd is effectively deprecated.
-- **localStorage over IndexedDB** — Sufficient for JSON card data; IndexedDB for attachments later.
-- **Single board in UI** — Store supports multiple boards; UI focuses on one active board for assignment scope.
+- **PostgreSQL over MongoDB** — Ordering, joins, and many-to-many tags are straightforward relational data.
+- **Single active board in UI** — API supports multiple boards; UI focuses on the first board for assignment scope.
 
 ## Project Structure (Atomic Design)
 
 ```
 src/
 ├── types/           # Board, Column, Card, Tag, Priority
-├── store/           # Zustand store, persist config, manual undo/redo history
-├── hooks/           # useKeyboardShortcuts, useFilteredCards, useBoardActions
+├── graphql/         # Apollo Client, fragments, queries, mutations, cache policies
+├── store/           # Local UI-only Zustand state
+├── hooks/           # Keyboard shortcuts and supporting hooks
 ├── theme/           # MUI light/dark themes
 ├── utils/           # Date helpers, priority colors
 └── components/
@@ -55,6 +62,15 @@ src/
     ├── organisms/   # TaskCard, KanbanColumn, BoardHeader, TaskCardModal, …
     ├── templates/   # BoardLayout
     └── pages/       # BoardPage (DndContext root)
+
+server/
+├── prisma/          # Prisma schema, SQL migration, seed script
+└── src/
+    ├── schema.graphql
+    ├── index.ts
+    ├── db/
+    ├── graphql/     # Context, DataLoader, directives, cursor helpers, errors
+    └── resolvers/
 ```
 
 ## Getting Started
@@ -65,19 +81,41 @@ src/
 
 ### Install & run
 
+Copy the environment template:
+
 ```bash
-npm install
-npm run dev
+cp .env.example .env
 ```
 
-Open the URL printed in your terminal (usually [http://localhost:5173](http://localhost:5173)). If that port is busy, Vite uses the next free port (e.g. 5174).
+Start PostgreSQL and the API with Docker:
 
-**Blank page or error screen?** Clear old storage in DevTools → Application → Local Storage → delete `kanban-store` and `kanban-store-v2`, then refresh. See [docs/TECH_RESEARCH.md](docs/TECH_RESEARCH.md#6-why-blank-screen-can-happen-and-how-we-fixed-it).
+```bash
+docker compose up
+```
+
+In another terminal, run the Vite client:
+
+```bash
+npm install
+npm run dev:client
+```
+
+Open [http://localhost:5173](http://localhost:5173). The API runs at [http://localhost:4000/graphql](http://localhost:4000/graphql).
+
+Useful backend commands:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+npm run dev:server
+```
 
 ### Build
 
 ```bash
 npm run build
+npm run build:server
 npm run preview
 ```
 
@@ -89,12 +127,20 @@ npm run lint
 
 ## Deployment
 
-### Vercel (recommended)
+### Frontend: Vercel
 
 1. Push the repo to GitHub.
 2. Import the project at [vercel.com](https://vercel.com).
-3. Framework preset: **Vite**; build command: `npm run build`; output: `dist`.
-4. Deploy.
+3. Add `VITE_GRAPHQL_URL` pointing to the deployed API.
+4. Framework preset: **Vite**; build command: `npm run build`; output: `dist`.
+5. Deploy.
+
+### Backend: Railway / Render
+
+1. Create a PostgreSQL database.
+2. Set `DATABASE_URL`, `PORT`, and `CLIENT_ORIGIN`.
+3. Build command: `npm install && npm run db:generate && npm run build:server`.
+4. Start command: `npm run db:deploy && npm run start:server`.
 
 Or via CLI:
 
@@ -104,11 +150,12 @@ npx vercel --prod
 
 ## Loom Walkthrough
 
-Record a 5–7 minute walkthrough covering:
+Record a 7–10 minute walkthrough covering:
 - Atomic folder structure and why
-- Zustand store shape, persist setup, and manual undo/redo snapshots
+- GraphQL schema decisions: `Node`, `SearchResult`, `DateTime`, `Priority`, and pagination connections
+- Prisma models, ordering persistence, DataLoader, and seed script
+- Apollo Client type policies, `fetchMore`, fragments, and optimistic drag-and-drop updates
 - @dnd-kit `onDragEnd` flow
-- Filter/search implementation
 - Trade-offs from this README
 
 ## Keyboard Shortcuts
