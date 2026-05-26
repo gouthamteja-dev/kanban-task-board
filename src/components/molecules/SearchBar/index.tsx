@@ -4,11 +4,11 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import IconButton from '@mui/material/IconButton';
 import { AppInput } from '../../atoms/AppInput';
-import { useBoardStore } from '../../../store/boardStore';
+import { useUiStore } from '../../../store/uiStore';
 
 export function SearchBar() {
-  const search = useBoardStore((s) => s.filters.search);
-  const setFilters = useBoardStore((s) => s.setFilters);
+  const search = useUiStore((s) => s.filters.search);
+  const setFilters = useUiStore((s) => s.setFilters);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {

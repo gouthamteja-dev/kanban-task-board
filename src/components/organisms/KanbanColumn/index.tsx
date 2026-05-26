@@ -1,10 +1,11 @@
-import { memo, useMemo, useState } from 'react';
-import { useShallow } from 'zustand/react/shallow';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { useApolloClient, useMutation, useQuery } from '@apollo/client/react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
@@ -17,41 +18,62 @@ import { TaskCard } from '../TaskCard';
 import { EmptyState } from '../../atoms/EmptyState';
 import { ConfirmDialog } from '../../molecules/ConfirmDialog';
 import { AppIconButton } from '../../atoms/AppButton';
-import { type Card as CardType } from '../../../types';
-import { useBoardStore, selectFilteredCardIds } from '../../../store/boardStore';
+import { type Card as CardType, type Column, type FilterState } from '../../../types';
+import { COLUMN_CARDS_QUERY, DELETE_COLUMN_MUTATION, UPDATE_COLUMN_MUTATION } from '../../../graphql/documents';
+import { toClientCard, type CardConnection, type GqlCard } from '../../../graphql/types';
 
 interface KanbanColumnProps {
-  columnId: string;
+  column: Column;
+  filters: FilterState;
   onAddCard: (columnId: string) => void;
   onEditCard: (card: CardType) => void;
+  onCardsLoaded: (columnId: string, cards: CardType[]) => void;
 }
 
-export const KanbanColumn = memo(function KanbanColumn({ columnId, onAddCard, onEditCard }: KanbanColumnProps) {
-  const column = useBoardStore((s) => s.boards[s.activeBoardId]?.columns[columnId]);
-  const cards = useBoardStore((s) => s.boards[s.activeBoardId]?.cards ?? {});
-  const selector = useMemo(()=> selectFilteredCardIds(columnId), [columnId])
-  const filteredIds = useBoardStore(useShallow(selector));
-  
-  const renameColumn = useBoardStore((s) => s.renameColumn);
-  const deleteColumn = useBoardStore((s) => s.deleteColumn);
-
+export const KanbanColumn = memo(function KanbanColumn({ column, filters, onAddCard, onEditCard, onCardsLoaded }: KanbanColumnProps) {
+  const apolloClient = useApolloClient();
+  const [updateColumn] = useMutation(UPDATE_COLUMN_MUTATION);
+  const [deleteColumn] = useMutation(DELETE_COLUMN_MUTATION, {
+    update(cache) {
+      cache.evict({ id: cache.identify({ __typename: 'Column', id: column.id }) });
+      cache.gc();
+    },
+  });
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const { setNodeRef, isOver } = useDroppable({ id: columnId, data: { type: 'column', columnId } });
+  const filterVariables = useMemo(() => ({
+    priorities: filters.priorities.map((p) => p.toUpperCase()),
+    tagIds: filters.tagIds,
+    search: filters.search.trim() || null,
+  }), [filters.priorities, filters.search, filters.tagIds]);
 
-  if (!column) return null;
+  const { data, loading, fetchMore } = useQuery<{ columnCards: CardConnection }>(COLUMN_CARDS_QUERY, {
+    variables: { columnId: column.id, first: 20, filter: filterVariables },
+    notifyOnNetworkStatusChange: true,
+  });
 
-  const cardCount = column.cardIds.length;
-  const filteredCards = filteredIds.map((id) => cards[id]).filter(Boolean);
-  const isFiltered = filteredIds.length !== cardCount;
+  const cards = useMemo(
+    () => (data?.columnCards.nodes ?? []).map((card: GqlCard) => toClientCard(card)),
+    [data]
+  );
+
+  useEffect(() => {
+    onCardsLoaded(column.id, cards);
+  }, [cards, column.id, onCardsLoaded]);
+
+  const cardIds = cards.map((card) => card.id);
+  const cardCount = data?.columnCards.totalCount ?? cards.length;
+  const isFiltered = Boolean(filters.search.trim() || filters.priorities.length || filters.tagIds.length);
+
+  const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { type: 'column', columnId: column.id } });
 
   const startEdit = () => { setEditTitle(column.title); setEditing(true); };
   const cancelEdit = () => setEditing(false);
-  const commitEdit = () => {
+  const commitEdit = async () => {
     const t = editTitle.trim();
-    if (t && t !== column.title) renameColumn(columnId, t);
+    if (t && t !== column.title) await updateColumn({ variables: { input: { id: column.id, title: t } } });
     setEditing(false);
   };
 
@@ -135,24 +157,33 @@ export const KanbanColumn = memo(function KanbanColumn({ columnId, onAddCard, on
             maxHeight: 'calc(100vh - 220px)',
           }}
         >
-          <SortableContext items={filteredIds} strategy={verticalListSortingStrategy}>
-            {filteredCards.length === 0 ? (
+          <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
+            {cards.length === 0 ? (
               <EmptyState
-                title={isFiltered ? 'No cards match the filter' : 'No cards yet'}
-                subtitle={isFiltered ? '' : 'Click + to add your first card'}
+                title={loading ? 'Loading cards...' : isFiltered ? 'No cards match the filter' : 'No cards yet'}
+                subtitle={loading || isFiltered ? '' : 'Click + to add your first card'}
               />
             ) : (
-              filteredCards.map((card) => (
+              cards.map((card) => (
                 <TaskCard key={card.id} card={card} onEdit={onEditCard} />
               ))
             )}
           </SortableContext>
+          {data?.columnCards.pageInfo.hasNextPage && (
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => fetchMore({ variables: { after: data.columnCards.pageInfo.endCursor } })}
+            >
+              Load more
+            </Button>
+          )}
         </Box>
 
         <Box sx={{ px: 1.5, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
           <Tooltip title="Add card (N)" arrow>
             <Box
-              onClick={() => onAddCard(columnId)}
+              onClick={() => onAddCard(column.id)}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -183,7 +214,11 @@ export const KanbanColumn = memo(function KanbanColumn({ columnId, onAddCard, on
         }
         confirmLabel="Delete"
         danger
-        onConfirm={() => { deleteColumn(columnId); setConfirmDelete(false); }}
+        onConfirm={async () => {
+          await deleteColumn({ variables: { id: column.id } });
+          await apolloClient.refetchQueries({ include: 'active' });
+          setConfirmDelete(false);
+        }}
         onCancel={() => setConfirmDelete(false)}
       />
     </>

@@ -7,9 +7,8 @@ import Checkbox from '@mui/material/Checkbox';
 import ListItemText from '@mui/material/ListItemText';
 import Badge from '@mui/material/Badge';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import { useBoardStore, selectAllTags } from '../../../store/boardStore';
-import {useShallow} from 'zustand/react/shallow';
-import { type Priority } from '../../../types';
+import { useUiStore } from '../../../store/uiStore';
+import { type Priority, type Tag } from '../../../types';
 import { PRIORITY_COLORS } from '../../../utils/helpers';
 
 const PRIORITIES: Priority[] = ['high', 'medium', 'low'];
@@ -26,12 +25,15 @@ const sectionLabelSx = {
   textTransform: 'uppercase' as const,
 };
 
-export function FilterBar() {
+interface FilterBarProps {
+  tags: Tag[];
+}
+
+export function FilterBar({ tags }: FilterBarProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const filters = useBoardStore((s) => s.filters);
-  const setFilters = useBoardStore((s) => s.setFilters);
-  const resetFilters = useBoardStore((s) => s.resetFilters);
-  const allTags = useBoardStore(useShallow(selectAllTags));
+  const filters = useUiStore((s) => s.filters);
+  const setFilters = useUiStore((s) => s.setFilters);
+  const resetFilters = useUiStore((s) => s.resetFilters);
 
   const activeCount = filters.priorities.length + filters.tagIds.length;
 
@@ -78,10 +80,10 @@ export function FilterBar() {
             />
           </MenuItem>
         ))}
-        {allTags.length > 0 && (
+        {tags.length > 0 && (
           <>
             <Box sx={{ ...sectionLabelSx, pt: 1.5 }}>Tags</Box>
-            {allTags.map((tag) => (
+            {tags.map((tag) => (
               <MenuItem key={tag.id} dense onClick={() => toggleTag(tag.id)} sx={{ borderRadius: 1 }}>
                 <Checkbox size="small" checked={filters.tagIds.includes(tag.id)} sx={{ p: 0.5, mr: 0.5, color: tag.color }} />
                 <ListItemText

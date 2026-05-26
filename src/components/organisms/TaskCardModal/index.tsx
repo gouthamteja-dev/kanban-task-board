@@ -5,6 +5,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import { useApolloClient, useMutation } from '@apollo/client/react';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
@@ -15,17 +16,19 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { type Dayjs } from 'dayjs';
-import { nanoid } from 'nanoid';
 import { AppInput } from '../../atoms/AppInput';
 import { TagChip } from '../../atoms/TagChip';
 import { type Card, type Priority, type Tag } from '../../../types';
-import { useBoardStore } from '../../../store/boardStore';
+import { CREATE_CARD_MUTATION, CREATE_TAG_MUTATION, UPDATE_CARD_MUTATION } from '../../../graphql/documents';
+import { toClientTag, toServerPriority, type GqlTag } from '../../../graphql/types';
 import { PRIORITY_COLORS, randomTagColor } from '../../../utils/helpers';
 
 interface TaskCardModalProps {
   open: boolean;
+  boardId: string;
   columnId: string | null;
   editCard: Card | null;
+  existingTags: Tag[];
   onClose: () => void;
 }
 
@@ -52,15 +55,18 @@ function buildInitialForm(editCard: Card | null) {
 }
 
 interface CardFormProps {
+  boardId: string;
   columnId: string | null;
   editCard: Card | null;
+  existingTags: Tag[];
   onClose: () => void;
 }
 
-function CardForm({ columnId, editCard, onClose }: CardFormProps) {
-  const addCard = useBoardStore((s) => s.addCard);
-  const editCardAction = useBoardStore((s) => s.editCard);
-
+function CardForm({ boardId, columnId, editCard, existingTags, onClose }: CardFormProps) {
+  const apolloClient = useApolloClient();
+  const [createCard] = useMutation(CREATE_CARD_MUTATION);
+  const [updateCard] = useMutation(UPDATE_CARD_MUTATION);
+  const [createTag] = useMutation(CREATE_TAG_MUTATION);
   const [form, setForm] = useState(() => buildInitialForm(editCard));
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState<{ title?: string }>({});
@@ -73,20 +79,44 @@ function CardForm({ columnId, editCard, onClose }: CardFormProps) {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = () => {
+  const ensurePersistedTags = async () => {
+    const existingByLabel = new Map(existingTags.map((tag) => [tag.label.toLowerCase(), tag]));
+    const resolved: Tag[] = [];
+    for (const tag of form.tags) {
+      if (tag.id.startsWith('local:')) {
+        const existing = existingByLabel.get(tag.label.toLowerCase());
+        if (existing) {
+          resolved.push(existing);
+        } else {
+          const result = await createTag({
+            variables: { input: { boardId, label: tag.label, color: tag.color } },
+          });
+          const created = (result.data as { createTag?: GqlTag } | undefined)?.createTag;
+          if (created) resolved.push(toClientTag(created));
+        }
+      } else {
+        resolved.push(tag);
+      }
+    }
+    return resolved;
+  };
+
+  const handleSubmit = async () => {
     if (!validate()) return;
+    const tags = await ensurePersistedTags();
     const payload = {
       title: form.title.trim(),
       description: form.description.trim(),
-      priority: form.priority,
+      priority: toServerPriority(form.priority),
       dueDate: form.dueDate,
-      tags: form.tags,
+      tagIds: tags.map((tag) => tag.id),
     };
     if (editCard) {
-      editCardAction(editCard.id, payload);
+      await updateCard({ variables: { input: { id: editCard.id, ...payload } } });
     } else if (columnId) {
-      addCard(columnId, payload);
+      await createCard({ variables: { input: { columnId, ...payload } } });
     }
+    await apolloClient.refetchQueries({ include: 'active' });
     onClose();
   };
 
@@ -99,7 +129,7 @@ function CardForm({ columnId, editCard, onClose }: CardFormProps) {
     }
     setForm((f) => ({
       ...f,
-      tags: [...f.tags, { id: nanoid(), label, color: randomTagColor() }],
+      tags: [...f.tags, { id: `local:${label.toLowerCase()}`, label, color: randomTagColor() }],
     }));
     setTagInput('');
   };
@@ -209,7 +239,7 @@ function CardForm({ columnId, editCard, onClose }: CardFormProps) {
   );
 }
 
-export function TaskCardModal({ open, columnId, editCard, onClose }: TaskCardModalProps) {
+export function TaskCardModal({ open, boardId, columnId, editCard, existingTags, onClose }: TaskCardModalProps) {
   const formKey = editCard?.id ?? columnId ?? 'new';
 
   return (
@@ -228,8 +258,10 @@ export function TaskCardModal({ open, columnId, editCard, onClose }: TaskCardMod
         {open && (
           <CardForm
             key={formKey}
+            boardId={boardId}
             columnId={columnId}
             editCard={editCard}
+            existingTags={existingTags}
             onClose={onClose}
           />
         )}

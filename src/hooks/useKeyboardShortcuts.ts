@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
-import { useBoardStore } from '../store/boardStore';
 
 interface Options {
   onNewCard?: () => void;
   onFocusSearch?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
-export function useKeyboardShortcuts({ onNewCard, onFocusSearch }: Options = {}) {
+export function useKeyboardShortcuts({ onNewCard, onFocusSearch, onUndo, onRedo }: Options = {}) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -18,13 +19,13 @@ export function useKeyboardShortcuts({ onNewCard, onFocusSearch }: Options = {})
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        useBoardStore.getState().undo();
+        onUndo?.();
         return;
       }
 
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
-        useBoardStore.getState().redo();
+        onRedo?.();
         return;
       }
 
@@ -43,5 +44,5 @@ export function useKeyboardShortcuts({ onNewCard, onFocusSearch }: Options = {})
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onNewCard, onFocusSearch]);
+  }, [onNewCard, onFocusSearch, onUndo, onRedo]);
 }

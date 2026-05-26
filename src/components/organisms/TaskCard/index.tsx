@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { useApolloClient, useMutation } from '@apollo/client/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import Card from '@mui/material/Card';
@@ -13,7 +14,7 @@ import { CardMetaRow } from '../../molecules/CardMetaRow';
 import { ConfirmDialog } from '../../molecules/ConfirmDialog';
 import { AppIconButton } from '../../atoms/AppButton';
 import { type Card as CardType } from '../../../types';
-import { useBoardStore } from '../../../store/boardStore';
+import { DELETE_CARD_MUTATION } from '../../../graphql/documents';
 
 interface TaskCardProps {
   card: CardType;
@@ -22,7 +23,8 @@ interface TaskCardProps {
 }
 
 export const TaskCard = memo(function TaskCard({ card, onEdit, isDragOverlay = false }: TaskCardProps) {
-  const deleteCard = useBoardStore((s) => s.deleteCard);
+  const apolloClient = useApolloClient();
+  const [deleteCard] = useMutation(DELETE_CARD_MUTATION);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const {
@@ -163,7 +165,11 @@ export const TaskCard = memo(function TaskCard({ card, onEdit, isDragOverlay = f
         description={`"${card.title}" will be permanently removed.`}
         confirmLabel="Delete"
         danger
-        onConfirm={() => { deleteCard(card.id); setConfirmOpen(false); }}
+        onConfirm={async () => {
+          await deleteCard({ variables: { id: card.id } });
+          await apolloClient.refetchQueries({ include: 'active' });
+          setConfirmOpen(false);
+        }}
         onCancel={() => setConfirmOpen(false)}
       />
     </>

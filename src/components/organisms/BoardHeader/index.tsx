@@ -7,27 +7,20 @@ import IconButton from '@mui/material/IconButton';
 import Divider from '@mui/material/Divider';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
-import UndoIcon from '@mui/icons-material/Undo';
-import RedoIcon from '@mui/icons-material/Redo';
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
 import { SearchBar } from '../../molecules/SearchBar';
 import { FilterBar } from '../../molecules/FilterBar';
-import { useShallow } from 'zustand/react/shallow';
-import { useBoardStore } from '../../../store/boardStore';
+import { useUiStore } from '../../../store/uiStore';
+import { type Tag } from '../../../types';
 
-export function BoardHeader() {
-  const { darkMode, toggleDarkMode, activeBoard, canUndo, canRedo, undo, redo } =
-    useBoardStore(
-      useShallow((s) => ({
-        darkMode:       s.darkMode,
-        toggleDarkMode: s.toggleDarkMode,
-        activeBoard:    s.boards[s.activeBoardId],
-        canUndo:        s.canUndo,
-        canRedo:        s.canRedo,
-        undo:           s.undo,
-        redo:           s.redo,
-      }))
-    );
+interface BoardHeaderProps {
+  title: string;
+  tags: Tag[];
+}
+
+export function BoardHeader({ title, tags }: BoardHeaderProps) {
+  const darkMode = useUiStore((s) => s.darkMode);
+  const toggleDarkMode = useUiStore((s) => s.toggleDarkMode);
 
   return (
     <AppBar
@@ -43,30 +36,15 @@ export function BoardHeader() {
       <Toolbar sx={{ gap: 1.5, minHeight: '56px !important', px: { xs: 2, sm: 3 } }}>
         <ViewKanbanIcon sx={{ color: 'primary.main', fontSize: 26 }} />
         <Typography variant="h6" sx={{ fontWeight: 700, mr: 1, display: { xs: 'none', sm: 'block' } }}>
-          {activeBoard?.title ?? 'Kanban Board'}
+          {title}
         </Typography>
 
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
 
-        <Tooltip title={`Undo (Ctrl+Z)${!canUndo ? ' — nothing to undo' : ''}`} arrow>
-          <span>
-            <IconButton size="small" onClick={undo} disabled={!canUndo}>
-              <UndoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={`Redo (Ctrl+Y)${!canRedo ? ' — nothing to redo' : ''}`} arrow>
-          <span>
-            <IconButton size="small" onClick={redo} disabled={!canRedo}>
-              <RedoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-
         <Box sx={{ flex: 1 }} />
 
         <SearchBar />
-        <FilterBar />
+        <FilterBar tags={tags} />
 
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
 
