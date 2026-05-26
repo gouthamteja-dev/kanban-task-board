@@ -1,0 +1,212 @@
+directive @uppercase on FIELD_DEFINITION
+
+scalar DateTime
+
+interface Node {
+  id: ID!
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  DELETED
+  RESTORED
+  MOVED
+  REORDERED
+}
+
+union SearchResult = Board | Column | Card
+
+type User implements Node {
+  id: ID!
+  name: String!
+  email: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Board implements Node {
+  id: ID!
+  title: String! @uppercase
+  order: Int!
+  columns: [Column!]!
+  tags: [Tag!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Column implements Node {
+  id: ID!
+  boardId: ID!
+  title: String!
+  order: Int!
+  cards(first: Int = 20, after: String, filter: CardFilterInput): CardConnection!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Card implements Node {
+  id: ID!
+  boardId: ID!
+  columnId: ID!
+  title: String!
+  description: String!
+  priority: Priority!
+  dueDate: DateTime
+  order: Int!
+  assignee: User
+  tags: [Tag!]!
+  isOverdue: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Tag implements Node {
+  id: ID!
+  boardId: ID!
+  label: String!
+  color: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type AuditLog implements Node {
+  id: ID!
+  cardId: ID
+  actor: User
+  action: AuditAction!
+  message: String!
+  createdAt: DateTime!
+}
+
+type CardEdge {
+  cursor: String!
+  node: Card!
+}
+
+type PageInfo {
+  startCursor: String
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+}
+
+type CardConnection {
+  edges: [CardEdge!]!
+  nodes: [Card!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+input CardFilterInput {
+  priorities: [Priority!]
+  tagIds: [ID!]
+  assigneeId: ID
+  search: String
+}
+
+input CreateBoardInput {
+  title: String!
+}
+
+input UpdateBoardInput {
+  id: ID!
+  title: String!
+}
+
+input CreateColumnInput {
+  boardId: ID!
+  title: String!
+}
+
+input UpdateColumnInput {
+  id: ID!
+  title: String!
+}
+
+input ReorderColumnsInput {
+  boardId: ID!
+  columnIds: [ID!]!
+}
+
+input CreateCardInput {
+  columnId: ID!
+  title: String!
+  description: String
+  priority: Priority!
+  dueDate: DateTime
+  tagIds: [ID!] = []
+  assigneeId: ID
+}
+
+input UpdateCardInput {
+  id: ID!
+  title: String
+  description: String
+  priority: Priority
+  dueDate: DateTime
+  tagIds: [ID!]
+  assigneeId: ID
+}
+
+input MoveCardInput {
+  cardId: ID!
+  toColumnId: ID!
+  toIndex: Int!
+}
+
+input ReorderCardsInput {
+  columnId: ID!
+  cardIds: [ID!]!
+}
+
+input CreateTagInput {
+  boardId: ID!
+  label: String!
+  color: String!
+}
+
+input UpdateTagInput {
+  id: ID!
+  label: String
+  color: String
+}
+
+type Query {
+  node(id: ID!): Node
+  users: [User!]!
+  boards: [Board!]!
+  board(id: ID!): Board
+  columnCards(columnId: ID!, first: Int = 20, after: String, filter: CardFilterInput): CardConnection!
+  search(boardId: ID!, term: String!): [SearchResult!]!
+}
+
+type Mutation {
+  createBoard(input: CreateBoardInput!): Board!
+  updateBoard(input: UpdateBoardInput!): Board!
+  deleteBoard(id: ID!): Board!
+  restoreBoard(id: ID!): Board!
+
+  createColumn(input: CreateColumnInput!): Column!
+  updateColumn(input: UpdateColumnInput!): Column!
+  deleteColumn(id: ID!): Column!
+  restoreColumn(id: ID!): Column!
+  reorderColumns(input: ReorderColumnsInput!): Board!
+
+  createCard(input: CreateCardInput!): Card!
+  updateCard(input: UpdateCardInput!): Card!
+  deleteCard(id: ID!): Card!
+  restoreCard(id: ID!): Card!
+  moveCard(input: MoveCardInput!): Card!
+  reorderCards(input: ReorderCardsInput!): Column!
+
+  createTag(input: CreateTagInput!): Tag!
+  updateTag(input: UpdateTagInput!): Tag!
+  deleteTag(id: ID!): Tag!
+}

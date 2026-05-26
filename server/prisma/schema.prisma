@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  DELETED
+  RESTORED
+  MOVED
+  REORDERED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedCards Card[]     @relation("CardAssignee")
+  auditLogs     AuditLog[]
+}
+
+model Board {
+  id        String    @id @default(cuid())
+  title     String
+  order     Int       @default(0)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  columns Column[]
+  cards   Card[]
+  tags    Tag[]
+
+  @@index([deletedAt, order])
+}
+
+model Column {
+  id        String    @id @default(cuid())
+  boardId   String
+  title     String
+  order     Int
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards Card[]
+
+  @@index([boardId, deletedAt, order])
+}
+
+model Card {
+  id          String    @id @default(cuid())
+  boardId     String
+  columnId    String
+  assigneeId  String?
+  title       String
+  description String
+  priority    Priority
+  dueDate     DateTime?
+  order       Int
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  board    Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  column   Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assignee User?     @relation("CardAssignee", fields: [assigneeId], references: [id])
+  tags     CardTag[]
+  audits   AuditLog[]
+
+  @@index([boardId, deletedAt])
+  @@index([columnId, deletedAt, order])
+  @@index([assigneeId])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  boardId   String
+  label     String
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cards CardTag[]
+
+  @@unique([boardId, label])
+}
+
+model CardTag {
+  cardId String
+  tagId  String
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([cardId, tagId])
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  cardId    String?
+  actorId   String?
+  action    AuditAction
+  message   String
+  createdAt DateTime    @default(now())
+
+  card  Card? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([cardId, createdAt])
+}
